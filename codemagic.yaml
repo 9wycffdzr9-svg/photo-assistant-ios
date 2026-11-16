@@ -1,11 +1,8 @@
 # Codemagic 配置：在它的 Mac 机器上编译，产出未签名 ipa
 # 2026-11-16 小鱼
 #
-# 用法：codemagic.io 里 Add application → 选 photo-assistant-ios 仓库 → 它会读到这份配置
-# 点 Start new build 就行。免费额度每月 500 分钟，这次大概 3-5 分钟。
-#
-# v2（14:50 改）：上一次编译 13 秒就失败，但脚本没停、打了个 1.5KB 的空包。
-# 现在把编译输出全写进 build.log 并作为 artifact 传上来，失败原因一眼能看。
+# v3（15:05）：编译已经过了（步骤打勾），挂在最后一步「找不到 .app」——
+# 我那句 find 限了 -maxdepth 1，产物在更深的层级。改成全盘找。
 
 workflows:
   ios-unsigned:
@@ -29,9 +26,6 @@ workflows:
         script: |
           cd $CM_BUILD_DIR
           xcodegen generate 2>&1 | tee xcodegen.log
-          echo "--- 工程结构 ---"
-          ls -la
-          echo "--- scheme 列表 ---"
           xcodebuild -list -project "$XCODE_PROJECT" 2>&1 | tee -a xcodegen.log
 
       - name: 编译（不签名）
@@ -48,44 +42,41 @@ workflows:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             build > build.log 2>&1 || true
-          echo "=== 编译输出最后 60 行 ==="
-          tail -60 build.log
-          echo "=== 所有 error 行 ==="
-          grep -n "error:" build.log | head -40 || echo "（没有 error: 行）"
+          echo "=== 最后 40 行 ==="
+          tail -40 build.log
+          echo "=== error 行 ==="
+          grep -n "error:" build.log | head -30 || echo "（没有 error: 行）"
 
-      - name: 检查有没有真产物
+      - name: 找产物并检查真假
         script: |
           cd $CM_BUILD_DIR
-          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" 2>/dev/null | head -1)
+          echo "=== build 下所有 .app ==="
+          find build -name "*.app" -type d 2>/dev/null
+          APP=$(find build -name "*.app" -type d 2>/dev/null | head -1)
           if [ -z "$APP" ]; then
-            echo "!!! 没有生成 .app，编译失败，详见 build.log"
+            echo "!!! 没找到 .app，下面是 build 目录结构"
+            ls -R build 2>/dev/null | head -80
             exit 1
           fi
-          echo "找到: $APP"
+          echo "用这个: $APP"
           BIN=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP/Info.plist" 2>/dev/null || echo "")
           echo "可执行文件名: $BIN"
           ls -lh "$APP/$BIN" || { echo "!!! .app 里没有可执行文件"; exit 1; }
+          echo "$APP" > app_path.txt
 
       - name: 打成 ipa
         script: |
           cd $CM_BUILD_DIR
-          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -1)
+          APP=$(cat app_path.txt)
           rm -rf Payload PhotoAssistant.ipa
           mkdir -p Payload
           cp -R "$APP" Payload/
           zip -qr PhotoAssistant.ipa Payload
           ls -lh PhotoAssistant.ipa
+          echo "=== ipa 里有什么 ==="
+          unzip -l PhotoAssistant.ipa | head -20
 
     artifacts:
       - PhotoAssistant.ipa
       - build.log
       - xcodegen.log
-      - build/Build/Products/Release-iphoneos/*.app
-
-    publishing:
-      email:
-        recipients:
-          - 9wycffdzr9@privaterelay.appleid.com
-        notify:
-          success: true
-          failure: true
