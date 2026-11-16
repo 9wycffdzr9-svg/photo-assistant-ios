@@ -1,8 +1,7 @@
 # Codemagic 配置：在它的 Mac 机器上编译，产出未签名 ipa
-# 2026-11-16 小鱼
 #
-# v3（15:05）：编译已经过了（步骤打勾），挂在最后一步「找不到 .app」——
-# 我那句 find 限了 -maxdepth 1，产物在更深的层级。改成全盘找。
+# v4（15:15）：编译 10 秒就结束、.app 里没有可执行文件。日志被 tail -40 截掉看不到原因。
+# 这次把 error 行、头 25 行、尾 40 行全打到页面上，一眼能看。
 
 workflows:
   ios-unsigned:
@@ -19,14 +18,18 @@ workflows:
     scripts:
       - name: 装 XcodeGen
         script: |
-          brew install xcodegen || true
+          brew install xcodegen 2>/dev/null || true
           xcodegen --version
 
       - name: 生成 Xcode 工程
         script: |
           cd $CM_BUILD_DIR
           xcodegen generate 2>&1 | tee xcodegen.log
-          xcodebuild -list -project "$XCODE_PROJECT" 2>&1 | tee -a xcodegen.log
+          echo "=== scheme ==="
+          xcodebuild -list -project "$XCODE_PROJECT" 2>&1 | head -30
+          echo "=== 源文件有没有被包进 target ==="
+          grep -A3 "sources:" project.yml || true
+          ls -la $CM_BUILD_DIR/App
 
       - name: 编译（不签名）
         script: |
@@ -42,10 +45,15 @@ workflows:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             build > build.log 2>&1 || true
-          echo "=== 最后 40 行 ==="
+
+          echo "########## 头 25 行 ##########"
+          head -25 build.log
+
+          echo "########## 所有 error / 失败标志 ##########"
+          grep -nE "error:|error |BUILD FAILED|Command .* failed|The following build commands" build.log | head -50 || echo "(没有匹配到)"
+
+          echo "########## 尾 40 行 ##########"
           tail -40 build.log
-          echo "=== error 行 ==="
-          grep -n "error:" build.log | head -30 || echo "（没有 error: 行）"
 
       - name: 找产物并检查真假
         script: |
@@ -54,14 +62,18 @@ workflows:
           find build -name "*.app" -type d 2>/dev/null
           APP=$(find build -name "*.app" -type d 2>/dev/null | head -1)
           if [ -z "$APP" ]; then
-            echo "!!! 没找到 .app，下面是 build 目录结构"
-            ls -R build 2>/dev/null | head -80
+            echo "!!! 没有 .app"
             exit 1
           fi
-          echo "用这个: $APP"
+          echo "=== .app 里有什么 ==="
+          ls -la "$APP"
           BIN=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP/Info.plist" 2>/dev/null || echo "")
-          echo "可执行文件名: $BIN"
-          ls -lh "$APP/$BIN" || { echo "!!! .app 里没有可执行文件"; exit 1; }
+          echo "=== 可执行文件名: [$BIN] ==="
+          if [ ! -f "$APP/$BIN" ]; then
+            echo "!!! 可执行文件不存在，说明链接没产出"
+            exit 1
+          fi
+          ls -lh "$APP/$BIN"
           echo "$APP" > app_path.txt
 
       - name: 打成 ipa
@@ -73,8 +85,6 @@ workflows:
           cp -R "$APP" Payload/
           zip -qr PhotoAssistant.ipa Payload
           ls -lh PhotoAssistant.ipa
-          echo "=== ipa 里有什么 ==="
-          unzip -l PhotoAssistant.ipa | head -20
 
     artifacts:
       - PhotoAssistant.ipa
