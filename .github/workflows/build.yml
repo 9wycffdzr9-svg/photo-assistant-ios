@@ -1,0 +1,58 @@
+# 在 GitHub 免费的 macOS 机器上编译，产出未签名 ipa
+# 2026-11-16 小鱼
+#
+# 用法：推到 GitHub（公共仓库免费，私有仓库每月 2000 分钟够用）
+# 跑完在 Actions 页面的 Artifacts 里下 PhotoAssistant-ipa
+#
+# 为什么这条路：本机是 Windows，没有 Xcode。GitHub 每个账号都有免费的
+# macOS runner，用它编译，比装黑苹果省几百 G 和几个小时。
+
+name: build-ios
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:      # 也能手动点一下就跑
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+      - name: 取代码
+        uses: actions/checkout@v4
+
+      - name: 装 XcodeGen
+        run: brew install xcodegen
+
+      - name: 生成工程
+        run: xcodegen generate
+
+      - name: 编译（不签名）
+        run: |
+          xcodebuild \
+            -project PhotoAssistant.xcodeproj \
+            -scheme PhotoAssistant \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: 打成 ipa
+        run: |
+          APP=$(find build/Build/Products/Release-iphoneos -name "*.app" -maxdepth 1 | head -1)
+          echo "找到 app: $APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qr PhotoAssistant.ipa Payload
+          ls -lh PhotoAssistant.ipa
+
+      - name: 传上去
+        uses: actions/upload-artifact@v4
+        with:
+          name: PhotoAssistant-ipa
+          path: PhotoAssistant.ipa
+          retention-days: 30

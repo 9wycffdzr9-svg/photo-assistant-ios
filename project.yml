@@ -1,0 +1,51 @@
+# XcodeGen 配置：在云端自动生成 .xcodeproj，不用手写那个二进制工程文件
+# 2026-11-16 小鱼
+#
+# 用法（在 mac 上）：
+#   brew install xcodegen && xcodegen generate
+#   open PhotoAssistant.xcodeproj
+#
+# 或者在 GitHub Actions 里全自动：见 .github/workflows/build.yml
+
+name: PhotoAssistant
+
+options:
+  bundleIdPrefix: com.xiaoyu
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    # 不签名：云端没有证书，先出未签名的包，本地再用 Sideloadly/AltStore 签
+    CODE_SIGNING_ALLOWED: "NO"
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGN_IDENTITY: ""
+    ENABLE_BITCODE: "NO"
+
+targets:
+  PhotoAssistant:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: App
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: 相册助手
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSPhotoLibraryUsageDescription: 需要读取相册，才能帮你整理重复照片、清理模糊图片。
+        NSPhotoLibraryAddUsageDescription: 整理后的照片需要存回相册。
+        NSAppTransportSecurity:
+          # 看板是 http 的内网地址（Tailscale），要放行
+          NSAllowsArbitraryLoads: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.xiaoyu.photoassistant
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
