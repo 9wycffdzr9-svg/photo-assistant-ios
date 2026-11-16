@@ -1,0 +1,76 @@
+# Codemagic 配置：在它的 Mac 机器上编译，产出未签名 ipa
+# 2026-11-16 小鱼
+#
+# 用法：codemagic.io 里 Add application → 选 photo-assistant-ios 仓库 → 它会读到这份配置
+# 点 Start new build 就行。免费额度每月 500 分钟，这次大概 3-5 分钟。
+
+workflows:
+  ios-unsigned:
+    name: iOS 未签名包
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+
+    environment:
+      xcode: latest
+      vars:
+        XCODE_PROJECT: "PhotoAssistant.xcodeproj"
+        XCODE_SCHEME: "PhotoAssistant"
+
+    scripts:
+      - name: 装 XcodeGen
+        script: |
+          brew install xcodegen || true
+          xcodegen --version
+
+      - name: 生成 Xcode 工程
+        script: |
+          cd $CM_BUILD_DIR
+          xcodegen generate
+          ls -la
+
+      - name: 编译（不签名）
+        script: |
+          cd $CM_BUILD_DIR
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build | xcpretty || \
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: 打成 ipa
+        script: |
+          cd $CM_BUILD_DIR
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -1)
+          echo "找到: $APP"
+          rm -rf Payload PhotoAssistant.ipa
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qr PhotoAssistant.ipa Payload
+          ls -lh PhotoAssistant.ipa
+
+    artifacts:
+      - PhotoAssistant.ipa
+      - build/Build/Products/Release-iphoneos/*.app
+
+    publishing:
+      email:
+        recipients:
+          - 9wycffdzr9@privaterelay.appleid.com
+        notify:
+          success: true
+          failure: true
