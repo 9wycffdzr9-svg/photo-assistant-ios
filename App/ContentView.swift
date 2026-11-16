@@ -131,6 +131,12 @@ struct ContentView: View {
                                 .lineLimit(1)
                         }
 
+                        HStack(spacing: 6) {
+                            Text("服务器").font(.system(size: 11)).foregroundColor(.secondary)
+                            Text(Uploader.baseURL).font(.system(size: 11)).foregroundColor(.secondary.opacity(0.8))
+                            Spacer()
+                        }
+
                         Button(action: { startSync() }) {
                             Text(busy ? "同步中，别退出" : "立即整理并同步")
                                 .font(.system(size: 16, weight: .semibold))

@@ -13,8 +13,18 @@ import Photos
 
 final class Uploader {
 
-    /// 看板服务地址（Tailscale 内网）
-    static var baseURL = "http://100.95.172.88:8765"
+    /// 看板服务地址。
+    /// 2026-11-16：原来写死 Tailscale 的 100.x 地址，手机没装 Tailscale 就永远连不上，
+    /// 表现是进度条 0/N 一个错都不报。现在默认走局域网，存过就用存的。
+    static let defaultServer = "http://192.168.0.56:8765"
+
+    static var baseURL: String {
+        get {
+            let v = UserDefaults.standard.string(forKey: "xy.server") ?? ""
+            return v.isEmpty ? defaultServer : v
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "xy.server") }
+    }
 
     /// 纯 ASCII 的机器 ID（中文名不能放 HTTP 头，会被中间层拆成下划线）
     static var deviceId: String {
